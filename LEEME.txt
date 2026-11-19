@@ -1,0 +1,83 @@
+SERVICIO DE WINDOWS GENERICO: KonSolutionsServicios
+(hoy con una tarea: XML recibidos)
+==============================================================
+
+ESTRUCTURA DE CARPETAS (una por servicio)
+  Comun/                   lo que usan todos: TareaProgramada.cs (ITareaProgramada + TareasWorker), Datos/ (conexion a SQL, rutas de archivos), Registro/ (log de errores)
+  Servicios/XmlRecibidos/  TODO lo de XML recibidos: Correo/ (Microsoft Graph, ZIP, XML), el servicio, su repositorio, sus modelos y su tarea
+  Servicios/<Otro>/        aqui iran los futuros, cada uno en su carpeta con su propia tarea
+  Program.cs               registra lo comun y cada servicio
+
+COMO ESTA ARMADO (generico)
+  Un solo servicio de Windows, KonSolutionsServicios, que aloja TAREAS PROGRAMADAS. Cada tarea es una clase que implementa ITareaProgramada (Comun/TareaProgramada.cs) y corre en su propio ciclo:
+  si una falla o tarda, las demas siguen. Hoy hay una: XmlRecibidos. Para agregar otra en el futuro: crea la clase (Nombre, EsperaInicial, EjecutarAsync), registrala en Program.cs con
+  AddSingleton<ITareaProgramada, MiTarea>() y listo; no hay que instalar otro servicio. Cada tarea se puede apagar con Tareas:<Nombre>:Habilitada=false en appsettings.json.
+  La conexion a SQL, los logs y el Registro de eventos son comunes a todas las tareas.
+
+TAREA XmlRecibidos - QUE HACE (los pasos, en este orden, cada corrida)
+  1) CORREO (solo si hay cuenta de Microsoft 365): descarga del buzon los correos de la carpeta de RECEPCION (los mas antiguos primero) y baja sus XML, PDF y ZIP (los ZIP se desempaquetan con limites de tamano).
+  2) Procesa cada XML con PROC_XML_RECIBIDOS_CARGAR (facturas, boletas, notas y guias van a FINANZAS.CPE_RECIBIDOS y LOGISTICA.GRE_RECIBIDAS).
+  3) Si todo el correo salio bien: los archivos van a la subcarpeta de procesados de la ruta de Compras y el correo se mueve a la carpeta de Outlook PROCESADOS.
+  4) Si algo fallo (XML rechazado, ZIP danado, adjunto muy grande, correo sin adjuntos...): los archivos van a la subcarpeta de errores, con un .txt al lado que dice el motivo, y el correo se mueve a la carpeta de Outlook ERRORES.
+  5) CARPETA (SIEMPRE, con o sin cuenta de Microsoft 365): procesa los XML, PDF y ZIP SUELTOS en la ruta de archivos de Compras (los que alguien deje ahi a mano o que ya estaban):
+       - cada XML se carga junto con su PDF (el PDF se reconoce por el nombre aunque el numero lleve ceros a la izquierda: ...-07567512.XML y ...-7567512.pdf son el mismo comprobante);
+       - un ZIP se abre y se procesa su contenido; el ZIP queda en procesados;
+       - lo que entra pasa a la subcarpeta de procesados y lo que no, a la de errores con su .txt de motivo; en los dos casos sale de la carpeta (no se reprocesa);
+       - un XML repetido (ya cargado) no es un error: va a procesados sin duplicarse;
+       - un PDF sin su XML se deja donde esta (puede que el XML todavia no llegue); un archivo modificado hace menos de 15 segundos (se esta copiando) o en uso por otro programa se deja para la siguiente corrida.
+     Sin cuenta de Microsoft 365 el servicio NO se detiene: solo hace este paso. Si la cuenta existe pero falla (Microsoft 365 caido, 403, carpeta de Outlook inexistente), el motivo queda en el log y el paso de la carpeta se hace igual.
+  Una falla pasajera (sin red, Microsoft saturado, base caida) NO mueve nada: el correo o el archivo se reintenta en la siguiente corrida. Un XML repetido no es error.
+  Las carpetas de Outlook (solo con cuenta), la ruta de archivos, "activo" y los minutos entre corridas se siguen configurando en Configuracion general > Compras (no cambia nada ahi). Sin cuenta solo se exige la ruta.
+
+QUE CAMBIA RESPECTO A ANTES
+  Antes este trabajo corria dentro de la API. Ahora es una tarea del servicio aparte. La API solo conserva los botones/endpoints manuales ("Ejecutar ahora"); ya NO lee el correo sola (hay que
+  usar el Program.cs nuevo de la API, que quita el AddHostedService). Si dejas los dos activos no se duplica nada (la base rechaza el XML repetido), pero se pelean por los correos.
+
+REQUISITOS
+  - Servidor Windows con acceso a SQL Server, a internet (login.microsoftonline.com y graph.microsoft.com) y a la carpeta de la ruta de Compras (la cuenta del servicio debe poder escribir en ella).
+  - Scripts SQL 39, 41, 42 y 43 ya instalados.
+  - App de Azure con permiso de aplicacion Mail.ReadWrite (con consentimiento del administrador), idealmente limitada a ese buzon.
+
+NOTA DE COMPILACION
+  El proyecto trae su nuget.config (solo nuget.org, con <clear/>): si tu maquina tiene registrado un origen local que no existe (por ejemplo el de DevExpress) la restauracion ya no falla con NU1301.
+
+INSTALACION
+  Se instala con el proyecto KonSolutionsInstalador (subcarpeta KonSolutionsInstalador de esta carpeta, y parte de KonSolutionsServicios.sln): su publicar.ps1 genera Instalador.exe + Servicio\; el instalador pide los datos, comprueba SQL y Microsoft 365, crea el servicio y lo inicia.
+  Ver KonSolutionsInstalador\LEEME.txt. Las variables de MAQUINA son KonSolutions_DB_CONNECTION y KonSolutions_GRAPH_SECRET (el instalador las guarda).
+
+VER EL PASO A PASO (depuracion en Visual Studio)
+  En Visual Studio elige el perfil "KonSolutionsServicios (paso a paso)" (Properties\launchSettings.json, ya incluido) y F5. Corre en consola con DOTNET_ENVIRONMENT=Development, que carga appsettings.Development.json
+  (nivel de registro Debug) y muestra cada paso en la ventana y en logs\servicio_AAAA-MM-DD.log:
+    ==== Nueva revision ====  >  Leyendo la configuracion general...  >  SQL: conectando a ...  >  Configuracion: activa, cada N minutos, ruta, cuenta de Microsoft 365 si/no
+    PASO 0 la carpeta de archivos y las de procesados / errores
+    PASO 1 correo (si hay cuenta): carpetas de Outlook, cuantos correos, cada correo y sus adjuntos
+    PASO 2 cada XML: lo leo, lo cargo en SQL (PROC_XML_RECIBIDOS_CARGAR), a que documento corresponde (o por que lo rechazo) y donde lo guardo; los PDF
+    PASO 3 la carpeta: cuantos archivos sueltos, los lotes, y el resultado de cada uno (a procesados o a errores y por que)
+    ==== Revision terminada. La proxima es en N minuto(s) ====
+  Sin el perfil (como servicio instalado) el nivel es Information: solo los cambios de estado, el resumen de cada corrida y los problemas. Para ver el paso a paso en el servidor instalado, pon Logging:LogLevel:Default = "Debug" en
+  el appsettings.json de la carpeta de instalacion y reinicia el servicio (despues vuelve a "Information": el Debug escribe mucho).
+  En Visual Studio el "Inicio rapido" a veces deja la ventana cerrada al terminar: si no la ves, usa Depurar > Iniciar sin depurar, o abre la carpeta bin\Debug\net9.0 y ejecuta KonSolutionsServicios.exe desde un terminal.
+
+SI "CORRE PERO NO MUEVE NADA"
+  - "Globalization Invariant Mode is not supported" al conectar a SQL: era la opcion InvariantGlobalization del proyecto (Microsoft.Data.SqlClient no la soporta en Windows); ya esta quitada.
+  Abre logs\servicio_AAAA-MM-DD.log (al lado del .exe): anota cada cambio de estado y cada corrida. Lo que dice y que hacer:
+  - "ACTIVO SIN CORREO": no hay cuenta de Microsoft 365; el servicio igual procesa la carpeta. Para leer el correo: TenantId, ClientId y Buzon en appsettings.json y la variable de MAQUINA KonSolutions_GRAPH_SECRET (despues de definirla hay que REINICIAR el servicio).
+  - "NO CORRE: la carga automatica esta apagada": activa la casilla en Configuracion general > Compras > XML recibidos y guarda.
+  - "no se pudo correr: La carpeta ... no existe o el servicio no puede verla": la ruta de archivos es una carpeta de RED (\\SERVIDOR\...) y el servicio corre como LocalSystem, que no entra a carpetas de red.
+    Soluciones: volver a correr el instalador y poner la cuenta en la pregunta "Cuenta", o, ya instalado:  sc.exe config KonSolutionsServicios obj= "DOMINIO\usuario" password= "..."  y reiniciar.
+  - "no se pudo correr: ... carpeta de Outlook ... no existe": revisa los nombres de las tres carpetas (recepcion, procesados, errores) en Configuracion general; se escriben como en Outlook, por ejemplo Bandeja de entrada/Comprobantes.
+  - "corrida terminada: 0 correos": no hay correos en la carpeta de recepcion del buzon configurado.
+  - Error 401/403 de Graph: la app de Azure no tiene el permiso Mail.ReadWrite (de aplicacion, con consentimiento del administrador) para ese buzon.
+
+COMO VER QUE PASA
+  - Registro de eventos de Windows > Aplicacion > origen KonSolutionsServicios (arranque, avisos y errores).
+  - Carpeta "logs" al lado del .exe (o Servicio:CarpetaLogs): errors_AAAA-MM-DD.log con el detalle tecnico.
+  - En la web, la pantalla del estado de XML recibidos sigue mostrando la ultima corrida si la API ejecuta manualmente; el servicio mantiene su propio estado en memoria.
+
+CUANDO CORRE
+  Espera 30 segundos al arrancar. Luego cada minuto mira la configuracion: si la carga esta activa y hay cuenta de Microsoft 365, corre y espera los minutos configurados (1 a 1440; 15 si esta vacio).
+  Si lo activas o cambias los minutos en la web, el servicio lo toma solo, sin reiniciar.
+
+PRUEBAS
+  137 pruebas automaticas contra SQL Server con un buzon de mentira (correos con XML/PDF/ZIP, errores, fallas pasajeras, repetidos, limites de peso, cancelacion, el ciclo programado y la carpeta sin cuenta). Todas OK.
+  Lo que NO se probo: la conexion real a Microsoft 365 (necesita tus credenciales) ni la instalacion como servicio en un Windows real (aqui no hay Windows).

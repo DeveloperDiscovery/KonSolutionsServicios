@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "KonSolutionsServicios (paso a paso)": {
+      "commandName": "Project",
+      "environmentVariables": { "DOTNET_ENVIRONMENT": "Development" }
+    }
+  }
+}

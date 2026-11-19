@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <!-- Servicio de Windows generico «KonSolutionsServicios»: aloja tareas programadas independientes. La primera es XML recibidos (baja de Microsoft 365 los XML y PDF de los comprobantes de proveedores). Para agregar otra: implementa ITareaProgramada y registrala en Program.cs. -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>KonSolutionsServicios</RootNamespace>
+    <AssemblyName>KonSolutionsServicios</AssemblyName>
+    <!-- los instaladores son otros proyectos (subcarpetas KonSolutionsInstalador / Instalador, incluida una vieja que haya quedado): el servicio no debe compilar nada de ellas, ni sus obj\bin -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);KonSolutionsInstalador\**;Instalador\**</DefaultItemExcludes>
+    <UserSecretsId>konsolutionsservicios</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
+    <PackageReference Include="Dapper" Version="2.1.35" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="appsettings.Development.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

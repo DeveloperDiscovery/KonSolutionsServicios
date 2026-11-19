@@ -1,0 +1,40 @@
+INSTALADOR DEL SERVICIO DE WINDOWS (KonSolutionsServicios)
+==========================================================
+
+QUE ES
+  Un Instalador.exe (consola, pide permisos de administrador) que deja el servicio funcionando sin hacer pasos a mano: copia los archivos, pide la configuracion, COMPRUEBA que todo sirve, crea el servicio y lo inicia.
+  Tambien lo desinstala, lo reinicia y lo detiene.
+
+COMO GENERARLO (una vez, en una maquina con el SDK de .NET 9)
+  PowerShell:   cd KonSolutionsServicios\Instalador ; .\publicar.ps1 -Salida C:\temp\KonSolutionsInstalacion
+  Sale una carpeta con  Instalador.exe  y la subcarpeta  Servicio\  (el servicio ya publicado). No hace falta .NET en el servidor. Copia la carpeta COMPLETA al servidor.
+
+COMO USARLO (en el servidor)
+  1) Clic derecho en Instalador.exe > Ejecutar como administrador.
+  2) Elige 1) Instalar o actualizar y contesta (Enter acepta lo que sale entre corchetes):
+       - Carpeta de instalacion              C:\KonSolutions\Servicios
+       - Microsoft 365: TenantId, ClientId   de la aplicacion registrada en Azure (permiso de aplicacion Mail.ReadWrite con consentimiento del administrador)
+       - Buzon                               el correo del que se leen los comprobantes
+       - Secreto de la aplicacion            no se muestra al escribirlo; queda en la variable de MAQUINA KonSolutions_GRAPH_SECRET
+       - Cadena de conexion a SQL Server     no se muestra; queda en la variable de MAQUINA KonSolutions_DB_CONNECTION
+       - Cuenta del servicio                 vacio = LocalSystem. Si la ruta de archivos de Compras es una carpeta de RED (\\servidor\...), pon una cuenta DOMINIO\usuario con acceso: LocalSystem NO entra a carpetas de red.
+  3) El instalador comprueba y te dice, antes de instalar:
+       [OK]/[ERROR]  conecta a SQL y existen los procedimientos del servicio (si no: corre los scripts SQL 39, 41 y 48)
+       [OK]/[ERROR]  Microsoft 365 acepta el tenant, el cliente y el secreto
+       [OK]/[AVISO]  la ruta de archivos de Compras (la de Configuracion general) se ve desde esta sesion, y aviso si es de red con LocalSystem
+     Si algo falla puedes cancelar y corregirlo, o instalar de todos modos.
+  4) Copia los archivos, escribe TenantId/ClientId/Buzon en appsettings.json (el ClientSecret del archivo queda siempre vacio), guarda las variables de maquina, crea el servicio (inicio automatico retrasado,
+     reinicio ante fallas) y lo inicia. A los ~30 segundos hace su primera corrida: mira  logs\servicio_AAAA-MM-DD.log  en la carpeta de instalacion.
+
+  ACTUALIZAR: vuelve a correr el instalador con la version nueva. Detiene el servicio, copia los archivos y conserva tu appsettings.json (los datos que dejes vacios no se tocan, incluidos el secreto y la conexion guardados).
+  DESINSTALAR: opcion 2 (puede borrar tambien la carpeta). Las variables de maquina no se tocan.
+
+INSTALACION DESATENDIDA (scripts, sin preguntas)
+  Instalador.exe --instalar --destino C:\KonSolutions\Servicios --tenant <id> --client <id> --buzon compras@empresa.com --secreto <secreto> --conexion "Server=...;Database=...;User Id=...;Password=...;TrustServerCertificate=True" [--cuenta DOMINIO\usuario --clave-cuenta <clave>] [--sin-iniciar]
+  Instalador.exe --desinstalar [--borrar-archivos --destino C:\KonSolutions\Servicios]
+  Instalador.exe --estado
+
+QUE SE PROBO Y QUE NO
+  Probado (en Linux, contra SQL Server y un servidor de Microsoft falso): escribir y conservar appsettings.json, la comprobacion de SQL (buena, clave mala, base sin los scripts) y la de Microsoft 365 (credenciales buenas, secreto malo con
+  el motivo de Azure, sin red) y la comprobacion de carpeta.
+  NO probado (aqui no hay Windows): crear/iniciar/eliminar el servicio con sc.exe, guardar las variables de maquina, el manifiesto de administrador y el .exe publicado. Si algo falla en tu servidor, copiame el mensaje en rojo.

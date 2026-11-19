@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Instalador del servicio de Windows KonSolutionsServicios. Un .exe de consola (pide permisos de administrador) que copia el servicio, pide la configuracion, prueba la conexion a SQL y a Microsoft 365,
+       crea el servicio, lo inicia y tambien lo desinstala. Se publica junto con el servicio con publicar.ps1. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Instalador</AssemblyName>
+    <RootNamespace>KonSolutionsInstalador</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.1" />
+  </ItemGroup>
+</Project>
